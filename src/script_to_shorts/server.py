@@ -18,8 +18,9 @@ from mcp.server.mcpserver.utilities.types import Image
 from pydantic import BaseModel, Field
 
 from . import generation as gen
-from . import store
-from .models import CameraMotion, Character, Line, Shot, VideoModel
+from . import media, store
+from . import subtitles as subs
+from .models import CameraMotion, Character, Cue, Line, Shot, VideoModel
 
 INSTRUCTIONS = """\
 這個伺服器把劇本做成約 2 分鐘的 9:16 擬人化寫實貓咪短劇（角色對白）。
@@ -43,6 +44,8 @@ INSTRUCTIONS = """\
 4. 生成順序：每個角色 generate_character_sheet（定裝照）→ 使用者滿意後，各鏡頭
    generate_keyframe → 使用者滿意後 start_video → 過 2–3 分鐘用 check_videos 取回。
    生成會花錢，每次呼叫前先告訴使用者預估費用。
+5. 所有鏡頭都有影片後：build_subtitles 產生 SRT 字幕（給 Premiere 匯入），
+   render_preview 接成一支燒好字幕的預覽 MP4。
 """
 
 def friendly_errors(fn):
@@ -208,7 +211,7 @@ def update_shot(
             shot.image_path = None
         changed = (visual_prompt, character_ids, action, lines, camera_motion, duration)
         if any(v is not None for v in changed):
-            shot.clip_path, shot.clips = None, {}
+            shot.reset_video()
     return _format(project_id)
 
 
@@ -265,7 +268,7 @@ def generate_keyframe(project_id: str, shot_id: int) -> list:
     with store.edit(project_id) as sb:
         s = sb.shot(shot_id)
         s.image_path = path
-        s.clip_path, s.clips = None, {}
+        s.reset_video()
         sb.spent_usd += gen.IMAGE_COST
     note = f"（注意：{', '.join(missing)} 沒有定裝照，外觀可能不一致）" if missing else ""
     return [f"鏡頭 {shot_id} 關鍵影格：{path}{note}", Image(data=gen.preview_jpeg(path), format="jpeg")]
@@ -323,6 +326,7 @@ def check_videos(project_id: str) -> str:
             if s.pending.get(model_name) == request_id:
                 del s.pending[model_name]
                 s.clips[model_name] = path
+                s.cues.pop(model_name, None)  # 重生的片段要重新對齊字幕
                 s.clip_path = s.clip_path or path
     return "\n".join(report) or "沒有生成中的影片。"
 
@@ -336,6 +340,60 @@ def select_clip(project_id: str, shot_id: int, model: VideoModel) -> str:
             raise ValueError(f"鏡頭 {shot_id} 沒有 {model.value} 的版本")
         shot.clip_path = shot.clips[model.value]
     return f"鏡頭 {shot_id} 改用 {model.value}：{shot.clip_path}"
+
+
+# ---------- 字幕與預覽 ----------
+
+
+def _timeline(project_id: str) -> tuple[list[Shot], list[str]]:
+    """依序列出每個鏡頭與選用片段的模型；有鏡頭還沒影片就報錯。"""
+    sb = store.load(project_id)
+    missing = [s.id for s in sb.shots if not s.clip_path or not s.clip_model()]
+    if missing:
+        raise ValueError(f"這些鏡頭還沒有影片：{', '.join(map(str, missing))}")
+    return sb.shots, [s.clip_model() for s in sb.shots]
+
+
+@tool
+def build_subtitles(project_id: str) -> str:
+    """產生整支影片的字幕 subtitles.srt（繁體台詞，時間對齊實際語音）。
+
+    第一次會對每個片段做語音辨識（每段約 $0.01），之後重用結果。
+    """
+    _require_key()
+    shots, models = _timeline(project_id)
+    todo = [(s, m) for s, m in zip(shots, models, strict=True) if m not in s.cues]
+    aligned: dict[int, list[Cue]] = {}
+    for s, m in todo:  # 片段不多，依序處理即可
+        chars = subs.transcribe_chars(s.clip_path)
+        aligned[s.id] = subs.align(s.lines, chars, media.duration(s.clip_path))
+    with store.edit(project_id) as sb:
+        for s, m in todo:
+            sb.shot(s.id).cues[m] = aligned[s.id]
+        sb.spent_usd += subs.WHISPER_COST_PER_CLIP * len(todo)
+        shots = sb.shots
+
+    timeline, offset = [], 0.0
+    for s, m in zip(shots, models, strict=True):
+        for c in s.cues[m]:
+            timeline.append(Cue(start=offset + c.start, end=offset + c.end, text=c.text))
+        offset += media.duration(s.clip_path)
+    path = store.project_dir(project_id) / "subtitles.srt"
+    path.write_text(subs.to_srt(timeline), encoding="utf-8")
+    preview = "\n".join(f"{c.start:6.2f}–{c.end:6.2f}  {c.text}" for c in timeline)
+    return f"字幕已產生：{path}（共 {len(timeline)} 句，全長 {offset:.1f} 秒）\n{preview}"
+
+
+@tool
+def render_preview(project_id: str) -> str:
+    """把各鏡頭選用的片段接成一支 1080x1920 預覽影片，並燒入字幕（白字黑邊）。免費，約 10–60 秒。"""
+    build_subtitles(project_id)
+    shots, _ = _timeline(project_id)
+    folder = store.project_dir(project_id)
+    out = media.render_preview(
+        [s.clip_path for s in shots], folder / "subtitles.srt", folder / "preview.mp4"
+    )
+    return f"預覽影片：{out}（{media.duration(out):.1f} 秒）"
 
 
 def main() -> None:

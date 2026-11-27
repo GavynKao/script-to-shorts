@@ -47,6 +47,14 @@ class Line(BaseModel):
     emotion: str = Field(default="", description="語氣，例如「不屑」「驚慌大喊」")
 
 
+class Cue(BaseModel):
+    """一則字幕，時間相對於所屬影片片段的開頭（秒）。"""
+
+    start: float
+    end: float
+    text: str
+
+
 class Shot(BaseModel):
     """單一鏡頭。"""
 
@@ -65,6 +73,22 @@ class Shot(BaseModel):
     pending: dict[str, str] = Field(
         default_factory=dict, description="生成中的影片：模型 → fal request_id"
     )
+    cues: dict[str, list[Cue]] = Field(
+        default_factory=dict, description="各模型片段對齊好的字幕（依實際語音時間）"
+    )
+
+    def reset_video(self) -> None:
+        """畫面或台詞變了：舊影片與對齊的字幕都不再適用。"""
+        self.clip_path = None
+        self.clips = {}
+        self.cues = {}
+
+    def clip_model(self) -> str | None:
+        """目前選用的片段是哪個模型生成的。"""
+        for model, path in self.clips.items():
+            if path == self.clip_path:
+                return model
+        return None
 
 
 class Storyboard(BaseModel):
