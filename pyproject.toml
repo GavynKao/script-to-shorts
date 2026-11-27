@@ -1,0 +1,23 @@
+[project]
+name = "script-to-shorts"
+version = "0.1.0"
+description = "輸入劇本，生成 9:16 故事旁白短影音，並輸出可匯入 Premiere 的素材包"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/script_to_shorts"]
+
+[tool.ruff]
+line-length = 100
