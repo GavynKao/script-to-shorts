@@ -5,6 +5,10 @@
 
 > 開發中。設計決策見 [docs/design.md](docs/design.md)。
 
+## 安裝（使用者）
+
+- **Mac**：見 [docs/install-mac.md](docs/install-mac.md)，在終端機貼一行指令即可。
+
 ## 流程
 
 劇本 → AI 拆分鏡 → 人工審核 → 角色定裝與各鏡頭生圖 → 配音 → 字幕 → 合成 MP4 與 Premiere 素材包
