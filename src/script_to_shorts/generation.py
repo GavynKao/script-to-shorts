@@ -89,6 +89,15 @@ def preview_jpeg(path: Path, max_side: int = 768) -> bytes:
 # ---------- 提示詞 ----------
 
 
+CAT_BODY = (
+    "Realistic cat anatomy and proportions, NOT a human body with a cat head: a cat-sized, "
+    "compact body with a large head relative to the body (about one third of total height), "
+    "a rounded furry belly, short legs with real cat hind legs (bent, digitigrade, standing on "
+    "the toes), small round paws instead of hands, fluffy fur visible at the neck, wrists and "
+    "ankles, and a natural tail coming out behind. The cat balances upright on its hind legs. "
+    "Clothes are small and tailored to the cat's body, like a well-fitted pet costume, so the "
+    "cat's real shape shows through."
+)
 NO_HUMANS = (
     "Everyone visible anywhere in the image, including background extras, is an "
     "anthropomorphic clothed cat. There are no humans."
@@ -103,7 +112,8 @@ def character_sheet_prompt(sb: Storyboard, character_id: str) -> str:
     c = sb.character(character_id)
     return (
         "Character turnaround reference photo for a film production. "
-        "A single anthropomorphic cat that stands upright on two legs and wears clothes like a human. "
+        "A single real cat that stands upright on its hind legs and wears clothes. "
+        f"{CAT_BODY} "
         f"Character: {c.appearance}. "
         "Full body from the tips of the ears to the feet, front view facing the camera, "
         "neutral relaxed expression. "
@@ -135,6 +145,7 @@ def keyframe_prompt(sb: Storyboard, shot: Shot, with_refs: bool) -> str:
                 c = sb.character(cid)
                 parts.append(f"Character {c.name}: {c.appearance}.")
     parts.append(f"Scene: {shot.visual_prompt}")
+    parts.append(f"All cats in the scene, including extras: {CAT_BODY}")
     parts.append(NO_HUMANS)
     parts.append(NO_TEXT)
     return " ".join(parts)
@@ -161,7 +172,8 @@ def video_prompt(sb: Storyboard, shot: Shot) -> str:
             f'mouth moving in sync: "{line.text}"'
         )
     parts.append(
-        "Photorealistic. Characters keep the exact appearance and outfit from the first frame. "
+        "Photorealistic. Characters keep the exact appearance, cat body proportions and outfit "
+        "from the first frame, and move like real cats (cat posture, ears and tail react to emotion). "
         f"{NO_HUMANS} No subtitles or on-screen text."
     )
     return " ".join(parts)
