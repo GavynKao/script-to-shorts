@@ -18,4 +18,21 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 copy .env.example .env   # 填入 API 金鑰
+pytest
 ```
+
+## 接上 Claude Desktop
+
+編輯 `%APPDATA%\Claude\claude_desktop_config.json`（Claude Desktop：設定 → 開發者 → 編輯設定），加入：
+
+```json
+{
+  "mcpServers": {
+    "script-to-shorts": {
+      "command": "C:\\Users\\<你>\\Projects\\script-to-shorts\\.venv\\Scripts\\script-to-shorts-mcp.exe"
+    }
+  }
+}
+```
+
+重新啟動 Claude Desktop，貼上劇本並說「幫我做成短影音分鏡」。
