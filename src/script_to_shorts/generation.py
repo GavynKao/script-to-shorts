@@ -12,9 +12,12 @@ from pathlib import Path
 
 import fal_client
 import httpx
+from dotenv import load_dotenv
 from PIL import Image as PILImage
 
 from .models import CameraMotion, Character, Shot, Storyboard, VideoModel
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 IMAGE_T2I = "fal-ai/nano-banana-2"
 IMAGE_EDIT = "fal-ai/nano-banana-2/edit"

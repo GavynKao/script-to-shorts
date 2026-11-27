@@ -10,9 +10,7 @@ from __future__ import annotations
 
 import functools
 import os
-from pathlib import Path
 
-from dotenv import load_dotenv
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.utilities.types import Image
@@ -21,8 +19,6 @@ from pydantic import BaseModel, Field
 from . import generation as gen
 from . import store
 from .models import CameraMotion, Character, Line, Shot, VideoModel
-
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 INSTRUCTIONS = """\
 這個伺服器把劇本做成約 2 分鐘的 9:16 擬人化寫實貓咪短劇（角色對白）。
