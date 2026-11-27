@@ -76,6 +76,18 @@ def _download(url: str, dest: Path) -> Path:
     return dest
 
 
+def upload_image(path: Path) -> str:
+    """重新編碼成真正的 PNG 再上傳。
+
+    使用者自己放的圖可能副檔名和實際格式不符（例如 JPEG 存成 .png），
+    直接上傳會宣告錯誤的格式，模型可能讀不了。
+    """
+    with PILImage.open(path) as im:
+        buf = io.BytesIO()
+        im.convert("RGB").save(buf, "PNG")
+    return fal_client.upload(buf.getvalue(), "image/png", file_name=f"{Path(path).stem}.png")
+
+
 def preview_jpeg(path: Path, max_side: int = 768) -> bytes:
     """縮小成預覽圖，讓 Claude Desktop 能直接顯示。"""
     with PILImage.open(path) as im:
@@ -142,6 +154,12 @@ def keyframe_prompt(sb: Storyboard, shot: Shot, with_refs: bool) -> str:
                 parts.append(f"Character {c.name}: {c.appearance}.")
     parts.append(f"Scene: {shot.visual_prompt}")
     parts.append(f"All cats in the scene, including extras: {CAT_BODY}")
+    if shot.character_ids:
+        parts.append(
+            "Background extra cats must look clearly different from the main characters: "
+            "never the same coat color or pattern as any main character, so viewers can't "
+            "confuse them."
+        )
     parts.append(NO_HUMANS)
     parts.append(NO_TEXT)
     return " ".join(parts)
@@ -195,7 +213,7 @@ def generate_character_sheet(sb: Storyboard, character_id: str, out_dir: Path) -
 def generate_keyframe(sb: Storyboard, shot: Shot, out_dir: Path) -> Path:
     refs = [sb.character(cid).reference_image for cid in shot.character_ids]
     if shot.character_ids and all(p and Path(p).exists() for p in refs):
-        urls = [fal_client.upload_file(Path(p)) for p in refs]
+        urls = [upload_image(Path(p)) for p in refs]
         result = fal_client.subscribe(
             IMAGE_EDIT,
             arguments={
@@ -225,7 +243,7 @@ def generate_keyframe(sb: Storyboard, shot: Shot, out_dir: Path) -> Path:
 def submit_video(sb: Storyboard, shot: Shot, model: VideoModel, with_audio: bool) -> str:
     if not shot.image_path or not Path(shot.image_path).exists():
         raise GenerationError(f"鏡頭 {shot.id} 還沒有關鍵影格，請先生成關鍵影格。")
-    image_url = fal_client.upload_file(Path(shot.image_path))
+    image_url = upload_image(Path(shot.image_path))
     prompt = video_prompt(sb, shot)
     duration = str(shot.duration)
     if model is VideoModel.KLING:

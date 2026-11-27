@@ -104,7 +104,9 @@ def test_keyframe_uses_character_refs(projects_dir, monkeypatch):
         return {"images": [{"url": "https://example/x.png"}]}
 
     monkeypatch.setattr(gen.fal_client, "subscribe", fake_subscribe)
-    monkeypatch.setattr(gen.fal_client, "upload_file", lambda p: f"https://up/{Path(p).name}")
+    monkeypatch.setattr(
+        gen.fal_client, "upload", lambda data, ctype, file_name=None: f"https://up/{file_name}"
+    )
     monkeypatch.setattr(gen, "_download", lambda url, dest: _fake_png(dest))
 
     result = server.generate_character_sheet(pid, "mimi")
@@ -116,6 +118,21 @@ def test_keyframe_uses_character_refs(projects_dir, monkeypatch):
     sb = store.load(pid)
     assert sb.shots[0].image_path.name == "shot_01.png"
     assert sb.spent_usd == pytest.approx(2 * gen.IMAGE_COST)
+
+
+def test_upload_reencodes_mislabeled_image(tmp_path, monkeypatch):
+    """JPEG 被存成 .png（使用者自己放的圖常見）時，上傳的必須是真正的 PNG。"""
+    fake = tmp_path / "cat.png"
+    PILImage.new("RGB", (40, 60), "gray").save(fake, "JPEG")
+    sent = {}
+
+    def fake_upload(data, ctype, file_name=None):
+        sent.update(data=data, ctype=ctype)
+        return "u"
+
+    monkeypatch.setattr(gen.fal_client, "upload", fake_upload)
+    gen.upload_image(fake)
+    assert sent["ctype"] == "image/png" and sent["data"][:8] == b"\x89PNG\r\n\x1a\n"
 
 
 def test_video_submit_and_check(projects_dir, monkeypatch):
@@ -135,7 +152,7 @@ def test_video_submit_and_check(projects_dir, monkeypatch):
         return Handle()
 
     monkeypatch.setattr(gen.fal_client, "submit", fake_submit)
-    monkeypatch.setattr(gen.fal_client, "upload_file", lambda p: "https://up/frame.png")
+    monkeypatch.setattr(gen.fal_client, "upload", lambda data, ctype, file_name=None: "https://up/frame.png")
     server.start_video(pid, 1, VideoModel.KLING)
     assert submitted["args"]["start_image_url"] == "https://up/frame.png"
     assert "這份報告誰寫的？" in submitted["args"]["prompt"]

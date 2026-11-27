@@ -78,10 +78,11 @@ class Shot(BaseModel):
     )
 
     def reset_video(self) -> None:
-        """畫面或台詞變了：舊影片與對齊的字幕都不再適用。"""
+        """畫面或台詞變了：舊影片、生成中的舊工作與對齊的字幕都不再適用。"""
         self.clip_path = None
         self.clips = {}
         self.cues = {}
+        self.pending = {}  # 舊關鍵影格做的影片就算之後完成也不能用
 
     def clip_model(self) -> str | None:
         """目前選用的片段是哪個模型生成的。"""
