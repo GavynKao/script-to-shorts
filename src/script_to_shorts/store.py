@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -23,9 +24,22 @@ from .models import Storyboard
 SUBDIRS = ("characters", "images", "audio", "clips")
 
 
+def _documents_dir() -> Path:
+    """使用者實際的「文件」資料夾（OneDrive 可能把它搬到別處）。"""
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+        CSIDL_PERSONAL = 5
+        if ctypes.windll.shell32.SHGetFolderPathW(None, CSIDL_PERSONAL, None, 0, buf) == 0:
+            return Path(buf.value)
+    return Path.home() / "Documents"
+
+
 def projects_root() -> Path:
     root = os.environ.get("STS_PROJECTS_DIR")
-    path = Path(root) if root else Path.home() / "Documents" / "ScriptToShorts"
+    path = Path(root) if root else _documents_dir() / "ScriptToShorts"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
