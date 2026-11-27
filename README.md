@@ -23,7 +23,9 @@ pytest
 
 ## 接上 Claude Desktop
 
-編輯 `%APPDATA%\Claude\claude_desktop_config.json`（Claude Desktop：設定 → 開發者 → 編輯設定），加入：
+在 Claude Desktop 選 設定 → 開發者 → 編輯設定，打開 `claude_desktop_config.json`。
+（Microsoft Store 版的位置可能在 `%LOCALAPPDATA%\Claude-Data\claude_<id>\`，不在 `%APPDATA%\Claude`。）
+保留原有內容，加入 `mcpServers`：
 
 ```json
 {
