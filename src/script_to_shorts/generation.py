@@ -90,17 +90,14 @@ def preview_jpeg(path: Path, max_side: int = 768) -> bytes:
 
 
 CAT_BODY = (
-    "Realistic cat anatomy and proportions, NOT a human body with a cat head: a cat-sized, "
-    "compact body with a large head relative to the body (about one third of total height), "
-    "a rounded furry belly, short legs with real cat hind legs (bent, digitigrade, standing on "
-    "the toes), small round paws instead of hands, fluffy fur visible at the neck, wrists and "
-    "ankles, and a natural tail coming out behind. The cat balances upright on its hind legs. "
-    "Clothes are small and tailored to the cat's body, like a well-fitted pet costume, so the "
-    "cat's real shape shows through."
+    "A real, natural domestic cat that looks exactly like a cat in a nature photo: real cat "
+    "anatomy and size, natural fur, NO clothes and NO accessories. Natural cat postures — "
+    "sitting, crouching, walking on four legs, perched on furniture, or briefly rearing up on "
+    "the hind legs. Expressive but genuinely cat-like face, ears, whiskers and tail."
 )
 NO_HUMANS = (
-    "Everyone visible anywhere in the image, including background extras, is an "
-    "anthropomorphic clothed cat. There are no humans."
+    "Everyone visible anywhere in the image, including background extras, is a real cat "
+    "without clothes. There are no humans."
 )
 NO_TEXT = (
     "Do not render any readable text: no signs, nameplates, labels, captions, subtitles, "
@@ -111,11 +108,11 @@ NO_TEXT = (
 def character_sheet_prompt(sb: Storyboard, character_id: str) -> str:
     c = sb.character(character_id)
     return (
-        "Character turnaround reference photo for a film production. "
-        "A single real cat that stands upright on its hind legs and wears clothes. "
+        "Character reference photo of a cat actor for a film production. "
         f"{CAT_BODY} "
         f"Character: {c.appearance}. "
-        "Full body from the tips of the ears to the feet, front view facing the camera, "
+        "Whole cat visible from ears to tail, sitting upright and facing the camera in a "
+        "three-quarter view so the face, chest, legs, paws and fur markings are all clear; "
         "neutral relaxed expression. "
         f"Match the photographic look of this style, but NOT its location or scenery: {sb.visual_style}. "
         "Background: a plain, seamless, empty light-gray studio backdrop with nothing else in it. "
@@ -135,9 +132,8 @@ def keyframe_prompt(sb: Storyboard, shot: Shot, with_refs: bool) -> str:
                 c = sb.character(cid)
                 parts.append(f"Image {i} is the character {c.name}: {c.appearance}.")
             parts.append(
-                "Keep every character exactly as in their reference image: same fur color and "
-                "markings, eye color, body shape, and the complete outfit from head to feet "
-                "(including trousers and footwear, or bare paws if they have none). "
+                "Keep every character exactly as in their reference image: same fur color, "
+                "exact markings and their positions, eye color, face shape and body size. "
                 "Do not copy the reference background or pose; place them naturally into the scene."
             )
         else:
@@ -172,8 +168,9 @@ def video_prompt(sb: Storyboard, shot: Shot) -> str:
             f'mouth moving in sync: "{line.text}"'
         )
     parts.append(
-        "Photorealistic. Characters keep the exact appearance, cat body proportions and outfit "
-        "from the first frame, and move like real cats (cat posture, ears and tail react to emotion). "
+        "Photorealistic. The cats keep the exact fur markings and body from the first frame, wear "
+        "no clothes, and move like real cats (ears, whiskers and tail react to emotion); only "
+        "their mouths move with the dialogue. "
         f"{NO_HUMANS} No subtitles or on-screen text."
     )
     return " ".join(parts)
