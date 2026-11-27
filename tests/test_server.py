@@ -120,6 +120,36 @@ def test_keyframe_uses_character_refs(projects_dir, monkeypatch):
     assert sb.spent_usd == pytest.approx(2 * gen.IMAGE_COST)
 
 
+def test_set_character_image_uses_user_photo(projects_dir, tmp_path):
+    pid = _new_project()
+    _storyboard(pid)
+    sb = store.load(pid)
+    sb.shots[0].image_path = projects_dir / "old.png"  # 鏡頭 1 有 mimi
+    sb.shots[1].image_path = projects_dir / "old2.png"  # 鏡頭 2 也有 mimi
+    store.save(pid, sb)
+
+    photo = tmp_path / "my cat.png"
+    PILImage.new("RGB", (50, 80), "silver").save(photo, "JPEG")  # 副檔名與格式不符也要能用
+    result = server.set_character_image(pid, "mimi", f'"{photo}"')  # Finder 複製路徑會帶引號
+    assert "鏡頭 1, 2" in result[0]
+
+    sb = store.load(pid)
+    ref = sb.character("mimi").reference_image
+    assert ref.name == "mimi_photo.png" and ref.read_bytes()[:4] == b"\x89PNG"
+    assert sb.shots[0].image_path is None
+
+    # 改外觀描述時，使用者的照片要保留；一般生成的定裝照則會被清掉
+    server.update_character(pid, "mimi", appearance="silver tabby")
+    assert store.load(pid).character("mimi").reference_image == ref
+
+
+def test_set_character_image_rejects_missing_file():
+    pid = _new_project()
+    _storyboard(pid)
+    with pytest.raises(ToolError, match="找不到"):
+        server.set_character_image(pid, "mimi", "/no/such/cat.jpg")
+
+
 def test_upload_reencodes_mislabeled_image(tmp_path, monkeypatch):
     """JPEG 被存成 .png（使用者自己放的圖常見）時，上傳的必須是真正的 PNG。"""
     fake = tmp_path / "cat.png"

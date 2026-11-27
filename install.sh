@@ -18,7 +18,7 @@ fail() { printf '\n\033[1;31m✗ %s\033[0m\n' "$1" >&2; exit 1; }
 
 [ "$(uname)" = "Darwin" ] || fail "這個安裝程式只支援 Mac。"
 
-step "1/5 準備安裝工具 uv"
+step "1/6 準備安裝工具 uv"
 export PATH="$HOME/.local/bin:$PATH"
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -26,7 +26,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 command -v uv >/dev/null 2>&1 || fail "uv 安裝失敗，請把上面的訊息截圖給開發者。"
 
-step "2/5 下載 script-to-shorts"
+step "2/6 下載 script-to-shorts"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL "https://github.com/$REPO/archive/refs/heads/main.tar.gz" | tar -xz -C "$tmp"
@@ -34,12 +34,44 @@ mkdir -p "$APP_DIR"
 rm -rf "$APP_DIR/src"
 cp -R "$tmp/script-to-shorts-main/." "$APP_DIR/"
 
-step "3/5 安裝 Python 環境（第一次需要幾分鐘）"
+step "3/6 安裝 Python 環境（第一次需要幾分鐘）"
 cd "$APP_DIR"
 [ -d .venv ] || uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python --quiet -e .
 
-step "4/5 設定 Claude Desktop"
+step "4/6 設定 fal.ai 金鑰"
+ENV_FILE="$APP_DIR/.env"
+check_key() {
+  # 免費的價格查詢，只用來確認金鑰有效
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Key $1" \
+    'https://api.fal.ai/v1/models/pricing?endpoint_id=fal-ai/nano-banana-2')" = "200" ]
+}
+current="$(grep -s '^FAL_KEY=' "$ENV_FILE" | cut -d= -f2- || true)"
+if [ -n "$current" ] && check_key "$current"; then
+  echo "  已有有效的金鑰，略過。"
+else
+  echo "  到 https://fal.ai/dashboard/keys 建立金鑰（Create Key），複製後貼到這裡。"
+  echo "  （貼上時畫面不會顯示文字，這是正常的；直接按 Enter 可以之後再設定）"
+  while true; do
+    printf '  fal.ai 金鑰：'
+    # 安裝腳本是透過 curl | bash 執行，要從終端機讀取輸入
+    IFS= read -r -s key < /dev/tty || key=""
+    echo
+    if [ -z "$key" ]; then
+      echo "  略過。之後再執行一次安裝指令即可設定。"
+      break
+    fi
+    if check_key "$key"; then
+      umask 077
+      printf 'FAL_KEY=%s\n' "$key" > "$ENV_FILE"
+      echo "  ✓ 金鑰有效，已儲存。"
+      break
+    fi
+    echo "  ✗ 這把金鑰無效，請再複製一次（或直接按 Enter 略過）。"
+  done
+fi
+
+step "5/6 設定 Claude Desktop"
 if pgrep -xq "Claude"; then
   osascript -e 'quit app "Claude"' || true
   for _ in $(seq 1 20); do pgrep -xq "Claude" || break; sleep 0.5; done
@@ -64,7 +96,7 @@ with open(tmp, "w", encoding="utf-8") as f:
 os.replace(tmp, path)
 PY
 
-step "5/5 檢查伺服器能否啟動"
+step "6/6 檢查伺服器能否啟動"
 .venv/bin/python -c "import script_to_shorts.server" \
   || fail "伺服器無法載入，請把上面的訊息截圖給開發者。"
 

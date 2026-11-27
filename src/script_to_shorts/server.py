@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import functools
 import os
+from pathlib import Path
 
 import fal_client
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.utilities.types import Image
+from PIL import Image as PILImage
 from pydantic import BaseModel, Field
 
 from . import generation as gen
@@ -43,7 +45,8 @@ INSTRUCTIONS = """\
    - action 用英文描述這幾秒內的動作（例如 "Mimi slams the table and stands up"）。
    - camera_motion 依情緒選擇，避免連續同一種。
 3. 條列分鏡給使用者確認，依意見用 update_shot / update_character 修改。
-4. 生成順序：每個角色 generate_character_sheet（定裝照）→ 使用者滿意後，各鏡頭
+4. 生成順序：每個角色 generate_character_sheet（定裝照；或使用者想用自己的貓照片時用
+   set_character_image，再依照片用 update_character 改 appearance）→ 使用者滿意後，各鏡頭
    generate_keyframe → 使用者滿意後 start_video → 過 2–3 分鐘用 check_videos 取回。
    生成會花錢，每次呼叫前先告訴使用者預估費用。
 5. 所有鏡頭都有影片後：build_subtitles 產生 SRT 字幕（給 Premiere 匯入），
@@ -221,12 +224,17 @@ def update_shot(
 def update_character(
     project_id: str, character_id: str, appearance: str | None = None, voice: str | None = None
 ) -> str:
-    """修改角色外觀或聲音。改外觀會清掉舊定裝照，需要重新 generate_character_sheet。"""
+    """修改角色外觀或聲音。改外觀會清掉舊定裝照，需要重新 generate_character_sheet。
+
+    例外：如果定裝照是使用者自己提供的照片（set_character_image），改外觀描述只是讓文字
+    跟照片一致，照片會保留。
+    """
     with store.edit(project_id) as sb:
         c = sb.character(character_id)
         if appearance is not None:
             c.appearance = appearance
-            c.reference_image = None
+            if not _is_user_photo(c.reference_image):
+                c.reference_image = None
         if voice is not None:
             c.voice = voice
     return _format(project_id)
@@ -239,6 +247,49 @@ def list_projects() -> str:
     if not projects:
         return "目前沒有專案。"
     return "\n".join(f"- {pid}：{title}" for pid, title in projects)
+
+
+USER_PHOTO_SUFFIX = "_photo"
+
+
+def _is_user_photo(path) -> bool:
+    return path is not None and Path(path).stem.endswith(USER_PHOTO_SUFFIX)
+
+
+@tool
+def set_character_image(project_id: str, character_id: str, image_path: str) -> list:
+    """用使用者自己的照片當角色定裝照（例如自家的貓），免費。
+
+    image_path：圖片在電腦上的完整路徑。Mac 取得方式：在 Finder 對檔案按右鍵，
+    按住 Option 鍵，選「拷貝 "檔名" 為路徑名稱」，再貼上。
+    照片會複製進專案，之後重生定裝照也不會覆蓋它。含有這個角色的鏡頭，舊的關鍵影格與影片
+    會被清掉，需要重新生成。
+    設定後請看回傳的照片，用 update_character 把 appearance 改成符合照片的描述（照片會保留）。
+    """
+    src = Path(image_path.strip().strip('"').strip("'")).expanduser()
+    if not src.is_file():
+        raise ValueError(f"找不到這個檔案：{src}")
+    try:
+        with PILImage.open(src) as im:
+            im = im.convert("RGB")
+            dest = store.project_dir(project_id) / "characters" / f"{character_id}{USER_PHOTO_SUFFIX}.png"
+            with store.edit(project_id) as sb:
+                c = sb.character(character_id)  # 角色不存在就在寫檔前報錯
+                im.save(dest, "PNG")
+                c.reference_image = dest
+                affected = [s.id for s in sb.shots if character_id in s.character_ids]
+                for s in sb.shots:
+                    if s.id in affected:
+                        s.image_path = None
+                        s.reset_video()
+                name = c.name
+    except OSError as e:
+        raise ValueError(f"這個檔案不是可讀取的圖片：{src}") from e
+    note = f"，鏡頭 {', '.join(map(str, affected))} 需要重新生成關鍵影格" if affected else ""
+    return [
+        f"{name} 的定裝照已換成：{dest}{note}。",
+        Image(data=gen.preview_jpeg(dest), format="jpeg"),
+    ]
 
 
 # ---------- 生成 ----------
