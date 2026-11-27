@@ -11,6 +11,7 @@ from __future__ import annotations
 import functools
 import os
 
+import fal_client
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.utilities.types import Image
@@ -65,10 +66,11 @@ def tool(fn):
 
 def _friendly(e: Exception) -> str:
     msg = str(e)
-    if "Exhausted balance" in msg:
-        return "fal.ai 帳戶餘額不足，請到 https://fal.ai/dashboard/billing 儲值後再試。"
-    if "401" in msg or "Unauthorized" in msg or "No user found" in msg:
-        return "fal.ai 金鑰無效，請檢查 .env 裡的 FAL_KEY。"
+    if isinstance(e, fal_client.FalClientHTTPError):
+        if "Exhausted balance" in msg:
+            return "fal.ai 帳戶餘額不足，請到 https://fal.ai/dashboard/billing 儲值後再試。"
+        if e.status_code == 401:
+            return "fal.ai 金鑰無效，請檢查 .env 裡的 FAL_KEY。"
     return msg
 
 

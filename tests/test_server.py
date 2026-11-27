@@ -186,12 +186,33 @@ def test_parallel_sheets_do_not_overwrite_each_other(monkeypatch):
     assert sb.spent_usd == pytest.approx(2 * gen.IMAGE_COST)
 
 
+def test_submit_retries_spurious_balance_error(monkeypatch):
+    calls = []
+
+    class Handle:
+        request_id = "ok"
+
+    def flaky(app, arguments):
+        calls.append(app)
+        if len(calls) == 1:
+            raise gen.fal_client.FalClientHTTPError(
+                "User is locked. Reason: Exhausted balance.", 403, "", None
+            )
+        return Handle()
+
+    monkeypatch.setattr(gen.fal_client, "submit", flaky)
+    assert gen._submit_with_retry("app", {}, wait=0) == "ok"
+    assert len(calls) == 2
+
+
 def test_balance_error_is_friendly(monkeypatch):
     pid = _new_project()
     _storyboard(pid)
 
     def broke(app, arguments):
-        raise RuntimeError("User is locked. Reason: Exhausted balance.")
+        raise gen.fal_client.FalClientHTTPError(
+            "User is locked. Reason: Exhausted balance.", 403, {}, None
+        )
 
     monkeypatch.setattr(gen.fal_client, "subscribe", broke)
     with pytest.raises(ToolError, match="餘額不足"):

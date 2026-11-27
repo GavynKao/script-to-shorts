@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import io
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -234,8 +235,22 @@ def submit_video(sb: Storyboard, shot: Shot, model: VideoModel, with_audio: bool
             "resolution": "720p",
             "generate_audio": with_audio,
         }
-    handle = fal_client.submit(VIDEO_ENDPOINTS[model].app, arguments=args)
-    return handle.request_id
+    return _submit_with_retry(VIDEO_ENDPOINTS[model].app, args)
+
+
+def _submit_with_retry(app: str, args: dict, attempts: int = 3, wait: float = 5.0) -> str:
+    """同時送出多支影片時，fal.ai 偶爾會誤報「餘額不足」（帳戶其實有錢），稍等重試即可。
+
+    真的沒錢時每次都會失敗，最後一次的錯誤照樣丟出。
+    """
+    for i in range(attempts):
+        try:
+            return fal_client.submit(app, arguments=args).request_id
+        except fal_client.FalClientHTTPError as e:
+            if "Exhausted balance" not in str(e) or i == attempts - 1:
+                raise
+            time.sleep(wait * (i + 1))
+    raise AssertionError("unreachable")
 
 
 def poll_video(model: VideoModel, request_id: str) -> str | None:
