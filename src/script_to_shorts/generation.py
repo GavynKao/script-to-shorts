@@ -88,16 +88,28 @@ def preview_jpeg(path: Path, max_side: int = 768) -> bytes:
 # ---------- 提示詞 ----------
 
 
+NO_HUMANS = (
+    "Everyone visible anywhere in the image, including background extras, is an "
+    "anthropomorphic clothed cat. There are no humans."
+)
+NO_TEXT = (
+    "Do not render any readable text: no signs, nameplates, labels, captions, subtitles, "
+    "speech bubbles or watermarks."
+)
+
+
 def character_sheet_prompt(sb: Storyboard, character_id: str) -> str:
     c = sb.character(character_id)
     return (
-        "Character reference photo for a film production. "
-        f"Overall style: {sb.visual_style}. "
+        "Character turnaround reference photo for a film production. "
         "A single anthropomorphic cat that stands upright on two legs and wears clothes like a human. "
         f"Character: {c.appearance}. "
-        "Full body from head to feet, front view facing the camera, neutral relaxed expression, "
-        "plain light-gray studio backdrop, soft even lighting, sharp focus. "
-        "Only this one character in the image. No text, no watermark."
+        "Full body from the tips of the ears to the feet, front view facing the camera, "
+        "neutral relaxed expression. "
+        f"Match the photographic look of this style, but NOT its location or scenery: {sb.visual_style}. "
+        "Background: a plain, seamless, empty light-gray studio backdrop with nothing else in it. "
+        "Soft even studio lighting, sharp focus. Only this one character in the image. "
+        f"{NO_TEXT}"
     )
 
 
@@ -113,15 +125,17 @@ def keyframe_prompt(sb: Storyboard, shot: Shot, with_refs: bool) -> str:
                 parts.append(f"Image {i} is the character {c.name}: {c.appearance}.")
             parts.append(
                 "Keep every character exactly as in their reference image: same fur color and "
-                "markings, eye color, body shape and clothing. Do not copy the reference "
-                "background or pose; place them naturally into the scene."
+                "markings, eye color, body shape, and the complete outfit from head to feet "
+                "(including trousers and footwear, or bare paws if they have none). "
+                "Do not copy the reference background or pose; place them naturally into the scene."
             )
         else:
             for cid in shot.character_ids:
                 c = sb.character(cid)
                 parts.append(f"Character {c.name}: {c.appearance}.")
     parts.append(f"Scene: {shot.visual_prompt}")
-    parts.append("No text, no subtitles, no speech bubbles, no watermark.")
+    parts.append(NO_HUMANS)
+    parts.append(NO_TEXT)
     return " ".join(parts)
 
 
@@ -146,8 +160,8 @@ def video_prompt(sb: Storyboard, shot: Shot) -> str:
             f'mouth moving in sync: "{line.text}"'
         )
     parts.append(
-        "Photorealistic. Characters keep the exact appearance from the first frame. "
-        "No subtitles or on-screen text."
+        "Photorealistic. Characters keep the exact appearance and outfit from the first frame. "
+        f"{NO_HUMANS} No subtitles or on-screen text."
     )
     return " ".join(parts)
 

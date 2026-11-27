@@ -30,8 +30,10 @@ INSTRUCTIONS = """\
    - 每鏡 4–8 秒，最多 2 句台詞；台詞每秒約 4 字，duration 要夠講完（字數 ÷ 4 + 1 秒）。
      2 分鐘約 18–25 個鏡頭。
    - 角色是站立、穿衣服的寫實貓。appearance 用英文寫，具體且固定：品種、毛色與花紋位置、
-     眼睛顏色、體型、固定服裝與配色（服裝是最穩定的辨識標記）。
+     眼睛顏色、體型，以及「從頭到腳」的完整服裝與配色：上衣、下身（褲子或裙子）、
+     鞋子或明寫赤腳（例如 "barefoot with white paws"）、配件。沒寫到的部分在不同鏡頭會變。
      同時出場的貓毛色要明顯不同（例如橘貓、黑貓、三花），避免兩隻虎斑。
+   - 劇中世界全是擬人貓，沒有人類；避免需要畫面文字的設計（招牌、桌牌），模型會亂寫字。
    - voice 用英文描述聲音特質（年齡、性別、音色、說話習慣）。
    - visual_prompt 用英文描述構圖、場景、表情、光線，不必重複角色外觀與全片畫風。
    - action 用英文描述這幾秒內的動作（例如 "Mimi slams the table and stands up"）。
@@ -152,17 +154,16 @@ def set_storyboard(
     project_id: str, characters: list[CharacterInput], shots: list[ShotInput]
 ) -> str:
     """寫入（覆蓋）整份分鏡表：角色清單與依序排列的鏡頭。"""
-    sb = store.load(project_id)
     known = {c.id for c in characters}
     for i, s in enumerate(shots, 1):
         _check_ids(known, s.character_ids, f"鏡頭 {i} ")
         _check_ids(known, [ln.speaker_id for ln in s.lines], f"鏡頭 {i} 的台詞")
-    old_refs = {c.id: c.reference_image for c in sb.characters}
-    sb.characters = [
-        Character(**c.model_dump(), reference_image=old_refs.get(c.id)) for c in characters
-    ]
-    sb.shots = [Shot(id=i, **s.model_dump()) for i, s in enumerate(shots, 1)]
-    store.save(project_id, sb)
+    with store.edit(project_id) as sb:
+        old_refs = {c.id: c.reference_image for c in sb.characters}
+        sb.characters = [
+            Character(**c.model_dump(), reference_image=old_refs.get(c.id)) for c in characters
+        ]
+        sb.shots = [Shot(id=i, **s.model_dump()) for i, s in enumerate(shots, 1)]
     return _format(project_id)
 
 
@@ -184,28 +185,28 @@ def update_shot(
     duration: int | None = None,
 ) -> str:
     """修改單一鏡頭，只傳要改的欄位。改畫面或角色會清掉舊影格與影片；改動作、台詞、運鏡、秒數會清掉舊影片。"""
-    sb = store.load(project_id)
-    shot = sb.shot(shot_id)
-    known = {c.id for c in sb.characters}
-    if character_ids is not None:
-        _check_ids(known, character_ids, "")
-        shot.character_ids = character_ids
-    if lines is not None:
-        _check_ids(known, [ln.speaker_id for ln in lines], "台詞")
-        shot.lines = lines
-    if visual_prompt is not None:
-        shot.visual_prompt = visual_prompt
-    if action is not None:
-        shot.action = action
-    if camera_motion is not None:
-        shot.camera_motion = camera_motion
-    if duration is not None:
-        shot.duration = Shot(id=0, visual_prompt="", duration=duration).duration
-    if visual_prompt is not None or character_ids is not None:
-        shot.image_path = None
-    if any(v is not None for v in (visual_prompt, character_ids, action, lines, camera_motion, duration)):
-        shot.clip_path, shot.clips = None, {}
-    store.save(project_id, sb)
+    with store.edit(project_id) as sb:
+        shot = sb.shot(shot_id)
+        known = {c.id for c in sb.characters}
+        if character_ids is not None:
+            _check_ids(known, character_ids, "")
+            shot.character_ids = character_ids
+        if lines is not None:
+            _check_ids(known, [ln.speaker_id for ln in lines], "台詞")
+            shot.lines = lines
+        if visual_prompt is not None:
+            shot.visual_prompt = visual_prompt
+        if action is not None:
+            shot.action = action
+        if camera_motion is not None:
+            shot.camera_motion = camera_motion
+        if duration is not None:
+            shot.duration = Shot(id=0, visual_prompt="", duration=duration).duration
+        if visual_prompt is not None or character_ids is not None:
+            shot.image_path = None
+        changed = (visual_prompt, character_ids, action, lines, camera_motion, duration)
+        if any(v is not None for v in changed):
+            shot.clip_path, shot.clips = None, {}
     return _format(project_id)
 
 
@@ -214,14 +215,13 @@ def update_character(
     project_id: str, character_id: str, appearance: str | None = None, voice: str | None = None
 ) -> str:
     """修改角色外觀或聲音。改外觀會清掉舊定裝照，需要重新 generate_character_sheet。"""
-    sb = store.load(project_id)
-    c = sb.character(character_id)
-    if appearance is not None:
-        c.appearance = appearance
-        c.reference_image = None
-    if voice is not None:
-        c.voice = voice
-    store.save(project_id, sb)
+    with store.edit(project_id) as sb:
+        c = sb.character(character_id)
+        if appearance is not None:
+            c.appearance = appearance
+            c.reference_image = None
+        if voice is not None:
+            c.voice = voice
     return _format(project_id)
 
 
@@ -241,14 +241,14 @@ def list_projects() -> str:
 def generate_character_sheet(project_id: str, character_id: str) -> list:
     """生成（或重生）角色定裝照：全身正面、灰色背景。約 $0.12，10–30 秒。"""
     _require_key()
-    sb = store.load(project_id)
+    snapshot = store.load(project_id)
     path = gen.generate_character_sheet(
-        sb, character_id, store.project_dir(project_id) / "characters"
+        snapshot, character_id, store.project_dir(project_id) / "characters"
     )
-    sb.character(character_id).reference_image = path
-    sb.spent_usd += gen.IMAGE_COST
-    store.save(project_id, sb)
-    name = sb.character(character_id).name
+    with store.edit(project_id) as sb:
+        sb.character(character_id).reference_image = path
+        sb.spent_usd += gen.IMAGE_COST
+        name = sb.character(character_id).name
     return [f"{name} 的定裝照：{path}", Image(data=gen.preview_jpeg(path), format="jpeg")]
 
 
@@ -256,14 +256,15 @@ def generate_character_sheet(project_id: str, character_id: str) -> list:
 def generate_keyframe(project_id: str, shot_id: int) -> list:
     """生成（或重生）鏡頭的 9:16 關鍵影格，會帶入角色定裝照維持外觀一致。約 $0.12，10–40 秒。"""
     _require_key()
-    sb = store.load(project_id)
-    shot = sb.shot(shot_id)
-    missing = [c for c in shot.character_ids if not sb.character(c).reference_image]
-    path = gen.generate_keyframe(sb, shot, store.project_dir(project_id) / "images")
-    shot.image_path = path
-    shot.clip_path, shot.clips = None, {}
-    sb.spent_usd += gen.IMAGE_COST
-    store.save(project_id, sb)
+    snapshot = store.load(project_id)
+    shot = snapshot.shot(shot_id)
+    missing = [c for c in shot.character_ids if not snapshot.character(c).reference_image]
+    path = gen.generate_keyframe(snapshot, shot, store.project_dir(project_id) / "images")
+    with store.edit(project_id) as sb:
+        s = sb.shot(shot_id)
+        s.image_path = path
+        s.clip_path, s.clips = None, {}
+        sb.spent_usd += gen.IMAGE_COST
     note = f"（注意：{', '.join(missing)} 沒有定裝照，外觀可能不一致）" if missing else ""
     return [f"鏡頭 {shot_id} 關鍵影格：{path}{note}", Image(data=gen.preview_jpeg(path), format="jpeg")]
 
@@ -278,13 +279,13 @@ def start_video(
     with_audio：讓影片模型直接生成角色對白與音效（嘴型同步）。
     """
     _require_key()
-    sb = store.load(project_id)
-    shot = sb.shot(shot_id)
-    request_id = gen.submit_video(sb, shot, model, with_audio)
-    shot.pending[model.value] = request_id
+    snapshot = store.load(project_id)
+    shot = snapshot.shot(shot_id)
+    request_id = gen.submit_video(snapshot, shot, model, with_audio)
     cost = gen.video_cost(shot, model)
-    sb.spent_usd += cost
-    store.save(project_id, sb)
+    with store.edit(project_id) as sb:
+        sb.shot(shot_id).pending[model.value] = request_id
+        sb.spent_usd += cost
     return f"鏡頭 {shot_id} 已送出 {model.value} 生成（約 ${cost:.2f}）。2–5 分鐘後呼叫 check_videos。"
 
 
@@ -292,39 +293,46 @@ def start_video(
 def check_videos(project_id: str) -> str:
     """查詢生成中的影片，完成的會下載到專案的 clips 資料夾。"""
     _require_key()
-    sb = store.load(project_id)
+    snapshot = store.load(project_id)
     clips_dir = store.project_dir(project_id) / "clips"
-    report = []
-    for shot in sb.shots:
-        for model_name, request_id in list(shot.pending.items()):
+    report, done, failed = [], [], []
+    for shot in snapshot.shots:
+        for model_name, request_id in shot.pending.items():
             model = VideoModel(model_name)
             try:
                 url = gen.poll_video(model, request_id)
             except gen.GenerationError as e:
-                del shot.pending[model_name]
+                failed.append((shot.id, model_name, request_id))
                 report.append(f"鏡頭 {shot.id}（{model_name}）失敗：{e}")
                 continue
             if url is None:
                 report.append(f"鏡頭 {shot.id}（{model_name}）還在生成中")
                 continue
             path = gen.download_video(url, clips_dir, shot.id, model)
-            shot.clips[model_name] = path
-            shot.clip_path = shot.clip_path or path
-            del shot.pending[model_name]
+            done.append((shot.id, model_name, request_id, path))
             report.append(f"鏡頭 {shot.id}（{model_name}）完成：{path}")
-    store.save(project_id, sb)
+    with store.edit(project_id) as sb:
+        for shot_id, model_name, request_id in failed:
+            s = sb.shot(shot_id)
+            if s.pending.get(model_name) == request_id:
+                del s.pending[model_name]
+        for shot_id, model_name, request_id, path in done:
+            s = sb.shot(shot_id)
+            if s.pending.get(model_name) == request_id:
+                del s.pending[model_name]
+                s.clips[model_name] = path
+                s.clip_path = s.clip_path or path
     return "\n".join(report) or "沒有生成中的影片。"
 
 
 @tool
 def select_clip(project_id: str, shot_id: int, model: VideoModel) -> str:
     """同一鏡頭有多個模型的版本時，選定要用在成片的那一個。"""
-    sb = store.load(project_id)
-    shot = sb.shot(shot_id)
-    if model.value not in shot.clips:
-        raise ValueError(f"鏡頭 {shot_id} 沒有 {model.value} 的版本")
-    shot.clip_path = shot.clips[model.value]
-    store.save(project_id, sb)
+    with store.edit(project_id) as sb:
+        shot = sb.shot(shot_id)
+        if model.value not in shot.clips:
+            raise ValueError(f"鏡頭 {shot_id} 沒有 {model.value} 的版本")
+        shot.clip_path = shot.clips[model.value]
     return f"鏡頭 {shot_id} 改用 {model.value}：{shot.clip_path}"
 
 

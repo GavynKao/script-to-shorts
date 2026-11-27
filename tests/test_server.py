@@ -164,6 +164,28 @@ def test_image_content_serializes(projects_dir, monkeypatch):
     assert kinds == ["text", "image"]
 
 
+def test_parallel_sheets_do_not_overwrite_each_other(monkeypatch):
+    """兩張定裝照同時生成時，兩個角色的定裝照都要保存下來（曾經後存的覆蓋先存的）。"""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    pid = _new_project()
+    _storyboard(pid)
+    barrier = threading.Barrier(2)
+
+    def slow_subscribe(app, arguments):
+        barrier.wait(timeout=5)  # 兩個請求都已讀取專案後才一起完成
+        return {"images": [{"url": "u"}]}
+
+    monkeypatch.setattr(gen.fal_client, "subscribe", slow_subscribe)
+    monkeypatch.setattr(gen, "_download", lambda url, dest: _fake_png(dest))
+    with ThreadPoolExecutor(2) as ex:
+        list(ex.map(lambda cid: server.generate_character_sheet(pid, cid), ["mimi", "heihei"]))
+    sb = store.load(pid)
+    assert all(c.reference_image for c in sb.characters)
+    assert sb.spent_usd == pytest.approx(2 * gen.IMAGE_COST)
+
+
 def test_balance_error_is_friendly(monkeypatch):
     pid = _new_project()
     _storyboard(pid)

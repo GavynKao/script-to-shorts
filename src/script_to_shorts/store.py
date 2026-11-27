@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -76,7 +79,24 @@ def load(project_id: str) -> Storyboard:
 
 
 def save(project_id: str, storyboard: Storyboard) -> None:
-    storyboard.save(_storyboard_path(project_id))
+    path = _storyboard_path(project_id)
+    tmp = path.with_suffix(".json.tmp")
+    storyboard.save(tmp)
+    os.replace(tmp, path)
+
+
+# 同一個 MCP 伺服器可能同時執行多個工具（例如平行生成兩張定裝照）。
+# 所有「讀取 → 修改 → 存檔」都要在鎖內完成，否則後存的會覆蓋先存的。
+_lock = threading.RLock()
+
+
+@contextmanager
+def edit(project_id: str) -> Iterator[Storyboard]:
+    """在鎖內讀取分鏡表，區塊結束時存檔。耗時的生成要放在區塊外面。"""
+    with _lock:
+        sb = load(project_id)
+        yield sb
+        save(project_id, sb)
 
 
 def list_projects() -> list[tuple[str, str]]:
